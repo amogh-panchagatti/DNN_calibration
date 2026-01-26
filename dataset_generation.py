@@ -335,26 +335,27 @@ def generate_test_dataset_balanced_bcrb(num_per_snr=2000, M=6, D=3, T=100, kl=np
 # =========================
 # Example calls
 # =========================
-# TRAIN: SNR in {0,5,10,15,20}, random angles by default
-high_train_levels = (25, 30)
-high_test_levels  = (-10,-5,0,5,10,15, 20, 25, 30)
+# UPDATED: Train across FULL SNR range for better generalization
+full_snr_levels = (-10, -5, 0, 5, 10, 15, 20, 25, 30)
 
-# Train: high SNR only (keep angles random to avoid memorizing a fixed geometry)
+# Train: FULL SNR range with random angles for robust generalization
 generate_train_dataset(
-    num_samples=40_000, M=6, D=3, T=3000, kl=np.pi,
-    snr_db_levels=high_train_levels,
-    theta_fixed=10.0,                 # random angles
-    save_path="Datasets/train_high_snr.npz",
+    num_samples=90_000,               # 10k samples per SNR level
+    M=6, D=3, T=3000, kl=np.pi,
+    snr_db_levels=full_snr_levels,    # Train on full range!
+    theta_fixed=None,                 # Random angles to avoid memorization
+    save_path="Datasets/train_full_snr.npz",
     rng_seed=123
 )
 
-# Test: high SNR only (keep fixed angle for controlled eval, or set None to stress generalization)
+# Test: Larger test set with fixed angles for controlled evaluation
 generate_test_dataset_balanced_bcrb(
-    num_per_snr=1, M=6, D=3, T=3000, kl=np.pi,
-    snr_db_levels=high_test_levels,   # restrict to high SNR
-    theta_fixed=8.0,                 # fixed angle protocol as before
+    num_per_snr=100,                  # Increased from 1 to 100 for statistical reliability
+    M=6, D=3, T=3000, kl=np.pi,
+    snr_db_levels=full_snr_levels,
+    theta_fixed=8.0,                  # Fixed angle for controlled eval
     b_scale=1.0,
-    save_path="Datasets/test_high_snr_bcrb.npz",
+    save_path="Datasets/test_full_snr_bcrb.npz",
     rng_seed=321
 )
 
