@@ -231,7 +231,39 @@ def evaluate_model_vs_bcrb(model, npz_path, M, device="cuda", save_plots=True,
 
 if __name__ == "__main__":
     import sys
-    from main_improved import CalibNetDeep
+    import torch.nn as nn
+    import math
+
+    class CalibNetDeep(nn.Module):
+        """Model definition copied here to avoid importing training script side effects."""
+        def __init__(self, M, p_drop=0.3):
+            super().__init__()
+            self.M = M
+
+            self.cnn = nn.Sequential(
+                nn.Conv2d(2, 64, 3, padding=1), nn.ReLU(inplace=True),
+                nn.Conv2d(64, 128, 3, padding=1), nn.ReLU(inplace=True),
+                nn.Conv2d(128, 128, 3, padding=1), nn.ReLU(inplace=True),
+                nn.Conv2d(128, 256, 3, padding=1), nn.ReLU(inplace=True),
+                nn.AdaptiveAvgPool2d(1),
+                nn.Flatten()
+            )
+
+            self.head = nn.Sequential(
+                nn.Linear(256, 512), nn.ReLU(inplace=True), nn.Dropout(p_drop),
+                nn.Linear(512, 256), nn.ReLU(inplace=True), nn.Dropout(p_drop),
+                nn.Linear(256, 2*M)
+            )
+
+            self.softplus = nn.Softplus(beta=1.5)
+
+        def forward(self, x):
+            z = self.cnn(x)
+            out = self.head(z)
+            psi_raw, phi_raw = out[:, :self.M], out[:, self.M:]
+            psi_hat = self.softplus(psi_raw)
+            phi_hat = torch.tanh(phi_raw) * math.pi
+            return torch.cat([psi_hat, phi_hat], dim=1)
 
     M = 6  # Array size
     device = "cuda" if torch.cuda.is_available() else "cpu"
