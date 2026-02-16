@@ -119,19 +119,25 @@ def generate_sample_cov_rescaled(M, D, T, kl, Psi, Phi, theta,
 
 def single_sample_crb(M=6, D=3, T=100, kl=np.pi,
                       rng=np.random, theta_deg=None, snr_db=None,
-                      base_noise_mat=None, ref_snr_db=0):
+                      base_noise_mat=None, ref_snr_db=0,
+                      use_fixed_params=False):
     """
     Generate a single sample with noise rescaling.
 
     Args:
         base_noise_mat: Pre-generated noise at ref_snr_db
         ref_snr_db: Reference SNR for base noise
+        use_fixed_params: If True, use fixed (ψ, φ) from get_fixed_params()
     """
-    # Random calibration parameters (for training data)
-    Psi = sample_trunc_laplace(size=(M,), rng=rng, b=1.0, upper=2.0)
-    Psi[0] = 1.0
-    Phi = rng.uniform(-np.pi/2, np.pi/2, size=M)
-    Phi[:2] = 0.0
+    if use_fixed_params:
+        # Use FIXED calibration parameters (for controlled CRB experiment)
+        Psi, Phi = get_fixed_params(M)
+    else:
+        # Random calibration parameters (original behavior)
+        Psi = sample_trunc_laplace(size=(M,), rng=rng, b=1.0, upper=2.0)
+        Psi[0] = 1.0
+        Phi = rng.uniform(-np.pi/2, np.pi/2, size=M)
+        Phi[:2] = 0.0
 
     if theta_deg is None:
         theta_deg = rng.uniform(-80, 80, size=D)
@@ -167,9 +173,13 @@ def generate_train_dataset_crb(num_samples=40_000, M=6, D=3, T=100, kl=np.pi,
                                 snr_db_levels=(0, 5, 10, 15, 20),
                                 theta_fixed=None,
                                 save_path="train_crb.npz",
-                                rng_seed=123):
+                                rng_seed=123,
+                                use_fixed_params=True):
     """
-    Generate training dataset (same as before, CRB not stored for training).
+    Generate training dataset with FIXED calibration parameters.
+
+    Args:
+        use_fixed_params: If True (default), use fixed (ψ, φ) for all samples.
     """
     rng = np.random.RandomState(rng_seed)
     Xs, ys, snrs = [], [], []
@@ -189,7 +199,8 @@ def generate_train_dataset_crb(num_samples=40_000, M=6, D=3, T=100, kl=np.pi,
         snr_db = int(rng.choice(snr_db_levels))
         X, y, snr, *_ = single_sample_crb(
             M, D, T, kl, rng, theta_fixed, snr_db,
-            base_noise_mat=base_noise_mat, ref_snr_db=ref_snr_db
+            base_noise_mat=base_noise_mat, ref_snr_db=ref_snr_db,
+            use_fixed_params=use_fixed_params
         )
         Xs.append(X)
         ys.append(y)
@@ -211,12 +222,14 @@ def generate_test_dataset_crb(num_per_snr=100, M=6, D=3, T=100, kl=np.pi,
                                theta_fixed=8.0,
                                b_scale=1.0,
                                save_path="test_crb.npz",
-                               rng_seed=321):
+                               rng_seed=321,
+                               use_fixed_params=True):
     """
-    Generate test dataset with FIXED-parameter CRB.
+    Generate test dataset with FIXED calibration parameters and CRB.
 
-    Key difference: CRB is computed once per SNR level at fixed parameters,
-    NOT per-sample with random parameters.
+    Key differences:
+    1. CRB is computed once per SNR level at fixed parameters
+    2. All samples use the same fixed (ψ, φ) values
     """
     rng = np.random.RandomState(rng_seed)
 
@@ -248,7 +261,8 @@ def generate_test_dataset_crb(num_per_snr=100, M=6, D=3, T=100, kl=np.pi,
         for _ in range(num_per_snr):
             X, y, snr, *_ = single_sample_crb(
                 M, D, T, kl, rng, theta_fixed, snr_db,
-                base_noise_mat=base_noise_mat, ref_snr_db=ref_snr_db
+                base_noise_mat=base_noise_mat, ref_snr_db=ref_snr_db,
+                use_fixed_params=use_fixed_params
             )
             Xs.append(X)
             ys.append(y)
