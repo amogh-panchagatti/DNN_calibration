@@ -23,6 +23,74 @@ def circular_distance(pred, true):
     diff = np.arctan2(np.sin(diff), np.cos(diff))
     return diff
 
+
+def plot_psi_samples(gain_pred, gain_true, snr, M, num_samples=5, save_path=None):
+    """
+    Plot actual Psi (gain) values: estimated vs true for sample predictions.
+
+    Args:
+        gain_pred: Predicted gains (N, M)
+        gain_true: True gains (N, M)
+        snr: SNR values for each sample (N,)
+        M: Number of array elements
+        num_samples: Number of samples to plot per SNR level
+        save_path: Path to save the plot
+    """
+    snr_levels = sorted(np.unique(snr))
+    # Select a subset of SNR levels for clarity
+    snr_subset = snr_levels[::2] if len(snr_levels) > 5 else snr_levels
+
+    _, axes = plt.subplots(2, len(snr_subset), figsize=(4*len(snr_subset), 8))
+    if len(snr_subset) == 1:
+        axes = axes.reshape(-1, 1)
+
+    for col, snr_val in enumerate(snr_subset):
+        mask = snr == snr_val
+        indices = np.where(mask)[0][:num_samples]
+
+        # Top row: Bar chart comparison for first sample
+        ax = axes[0, col]
+        idx = indices[0]
+        width = 0.35
+        x = np.arange(M)
+        ax.bar(x - width/2, gain_true[idx], width, label='True ψ', color='green', alpha=0.7)
+        ax.bar(x + width/2, gain_pred[idx], width, label='Estimated ψ', color='blue', alpha=0.7)
+        ax.set_xlabel('Antenna index', fontsize=10)
+        ax.set_ylabel('Gain (ψ)', fontsize=10)
+        ax.set_title(f'SNR = {snr_val} dB', fontsize=12, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels([f'ψ{i+1}' for i in range(M)])
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+        # Bottom row: Scatter plot (true vs estimated) for multiple samples
+        ax = axes[1, col]
+        true_vals = gain_true[indices].flatten()
+        pred_vals = gain_pred[indices].flatten()
+        ax.scatter(true_vals, pred_vals, alpha=0.6, s=30, c='blue')
+
+        # Perfect estimation line
+        lims = [min(true_vals.min(), pred_vals.min()) - 0.1,
+                max(true_vals.max(), pred_vals.max()) + 0.1]
+        ax.plot(lims, lims, 'r--', linewidth=2, label='Perfect estimation')
+        ax.set_xlim(lims)
+        ax.set_ylim(lims)
+        ax.set_xlabel('True ψ', fontsize=10)
+        ax.set_ylabel('Estimated ψ', fontsize=10)
+        ax.set_title(f'SNR = {snr_val} dB (n={len(indices)})', fontsize=12)
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+        ax.set_aspect('equal')
+
+    plt.suptitle('Gain (ψ) Estimation: True vs Predicted', fontsize=14, fontweight='bold', y=1.02)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"[INFO] Psi comparison plot saved to: {save_path}")
+
+    plt.show()
+
 def evaluate_model_vs_bcrb(model, npz_path, M, device="cuda", save_plots=True,
                            save_detailed_results=True, num_samples_to_show=10):
     """
@@ -215,6 +283,10 @@ def evaluate_model_vs_bcrb(model, npz_path, M, device="cuda", save_plots=True,
         print(f"[INFO] Plots saved to: {plot_path.resolve()}")
 
     plt.show()
+
+    # Plot actual Psi values: estimated vs true
+    plot_psi_samples(gain_pred, gain_true, snr, M, num_samples=num_samples_to_show,
+                     save_path='psi_comparison.png' if save_plots else None)
 
     return {
         'snr_levels': snr_levels,

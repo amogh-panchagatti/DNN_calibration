@@ -333,29 +333,30 @@ def generate_test_dataset_balanced_bcrb(num_per_snr=2000, M=6, D=3, T=100, kl=np
     return X_arr, y_arr, snr_arr, bcrb_g, bcrb_p
 
 # =========================
-# Example calls
+# Example calls (only run when executed directly)
 # =========================
-# UPDATED: Train across FULL SNR range for better generalization
-full_snr_levels = (-10, -5, 0, 5, 10, 15, 20, 25, 30)
+if __name__ == "__main__":
+    # UPDATED: Train across FULL SNR range for better generalization
+    full_snr_levels = (-10, -5, 0, 5, 10, 15, 20, 25, 30)
 
-# Train: FULL SNR range with random angles for robust generalization
-generate_train_dataset(
-    num_samples=90_000,               # 10k samples per SNR level
-    M=6, D=3, T=3000, kl=np.pi,
-    snr_db_levels=full_snr_levels,    # Train on full range!
-    theta_fixed=None,                 # Random angles to avoid memorization
-    save_path="Datasets/train_full_snr.npz",
-    rng_seed=123
-)
+    # Train: FULL SNR range with random angles for robust generalization
+    generate_train_dataset(
+        num_samples=90_000,               # 10k samples per SNR level
+        M=6, D=3, T=3000, kl=np.pi,
+        snr_db_levels=full_snr_levels,    # Train on full range!
+        theta_fixed=None,                 # Random angles to avoid memorization
+        save_path="Datasets/train_full_snr.npz",
+        rng_seed=123
+    )
 
-# Test: Larger test set with fixed angles for controlled evaluation
-generate_test_dataset_balanced_bcrb(
-    num_per_snr=100,                  # Increased from 1 to 100 for statistical reliability
-    M=6, D=3, T=3000, kl=np.pi,
-    snr_db_levels=full_snr_levels,
-    theta_fixed=8.0,                  # Fixed angle for controlled eval
-    b_scale=1.0,
-    save_path="Datasets/test_full_snr_bcrb.npz",
-    rng_seed=321
-)
+    # Test: Larger test set with fixed angles for controlled evaluation
+    generate_test_dataset_balanced_bcrb(
+        num_per_snr=100,                  # Increased from 1 to 100 for statistical reliability
+        M=6, D=3, T=3000, kl=np.pi,
+        snr_db_levels=full_snr_levels,
+        theta_fixed=8.0,                  # Fixed angle for controlled eval
+        b_scale=1.0,
+        save_path="Datasets/test_full_snr_bcrb.npz",
+        rng_seed=321
+    )
 
