@@ -303,7 +303,7 @@ if __name__ == "__main__":
     # Parameters matching the paper
     M = 6
     D = 3
-    T = 3000
+    T = 2000
     kl = np.pi
 
     full_snr_levels = (-10, -5, 0, 5, 10, 15, 20, 25, 30)
@@ -322,21 +322,22 @@ if __name__ == "__main__":
     print(f"  φ_fixed = {np.rad2deg(Phi_fixed)} degrees")
     print()
 
-    # Generate training data
+    # Generate training data - RANDOM (ψ, φ) for learning
     print("-"*60)
     generate_train_dataset_crb(
-        num_samples=90_000,
+        num_samples=10_000,
         M=M, D=D, T=T, kl=kl,
         snr_db_levels=full_snr_levels,
         theta_fixed=None,  # Random angles for training
         save_path="Datasets/train_crb.npz",
-        rng_seed=123
+        rng_seed=123,
+        use_fixed_params=False  # Random (ψ, φ) so model learns general estimator
     )
 
     # Generate test data with fixed-parameter CRB
     print("-"*60)
     generate_test_dataset_crb(
-        num_per_snr=100,
+        num_per_snr=222,  # ~2000 total (222 * 9 SNR levels)
         M=M, D=D, T=T, kl=kl,
         snr_db_levels=full_snr_levels,
         theta_fixed=8.0,
