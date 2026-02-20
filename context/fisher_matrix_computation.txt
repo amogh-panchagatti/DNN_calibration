@@ -1,0 +1,321 @@
+function [FIM, grad] = fischer_with_gradients_2(C, Phi, Psi, sigma_n_squared)
+% FISCHER_WITH_GRADIENTS 
+% Computes the Fisher Information Matrix for the parameters:
+%   - Gains:   psi(2)...psi(M)        [M-1 unknowns]
+%   - Phases:  phi(3)...phi(M)        [M-2 unknowns]
+%   - Real(C) first row:   rho(1..M)  [M unknowns]
+%   - Imag(C) first row:   iota(2..M) [M-1 unknowns]
+%   - Noise power:         sigma_n^2  [1 unknown]
+%
+% Also returns all partial derivatives dR/d(theta) in a 'grad' struct:
+%   grad.Psi{m1_ind},  grad.Phi{m1_ind},  grad.Rho{m1_ind}, grad.Io{m1_ind}, grad.Sigma
+%
+% C is an MxM Hermitian Toeplitz matrix describing the source covariance
+%   through its first row (rho + 1j*iota).
+% Phi, Psi are each length M.
+% sigma_n_squared is scalar noise power.
+
+%% 1) Initialization
+M = length(Psi);
+I_M = eye(M);
+
+% Precompute useful factors
+%   C_phi_theta = diag(exp(1i*Phi)) * C * diag(exp(-1i*Phi)) 
+%   G_psi_theta = diag(Psi) * C_phi_theta * diag(Psi)
+C_phi_theta = diag(exp(1i*Phi)) * C * diag(exp(-1i*Phi));
+G_psi_theta = diag(Psi)         * C * diag(Psi);
+
+% Full covariance matrix R
+R = diag(Psi)*diag(exp(1i*Phi))*C*diag(exp(-1i*Phi))*diag(Psi) + sigma_n_squared*I_M;
+inv_R = inv(R);
+
+% Allocate space for FIM
+FIM = zeros(4*M - 3, 4*M - 3);
+
+%% 2) Store partial derivatives in cell arrays
+grad.Psi   = cell(M-1,1);  % dR/d(psi(m)), m=2..M
+grad.Phi   = cell(M-2,1);  % dR/d(phi(m)), m=3..M
+grad.Rho   = cell(M,1);    % dR/d(rho(k)), k=1..M
+grad.Io    = cell(M-1,1);  % dR/d(iota(k)), k=2..M
+grad.Sigma = I_M;          % dR/d(sigma_n^2) = I_M
+
+%
+% -- Derivatives wrt Psi(2..M) --
+%
+for m1_ind = 1 : (M-1)
+    m1 = m1_ind + 1;  % actual sensor index in [2..M]
+    E_m1m1 = I_M(:,m1)*I_M(m1,:);  % picks out diagonal position (m1,m1)
+    % chain rule: R = Psi * (Phi*C*Phi^H) * Psi^H
+    % partial wrt psi(m1) => rank-1 update on left+right
+    dRdPsi_m1 = diag(Psi)*C_phi_theta*E_m1m1 + (diag(Psi)*C_phi_theta*E_m1m1)';
+    grad.Psi{m1_ind} = dRdPsi_m1;  % store
+end
+
+%
+% -- Derivatives wrt Phi(3..M) --
+%
+for m1_ind = 1 : (M-2)
+    m1 = m1_ind + 2;  % actual index in [3..M]
+    E_m1m1 = I_M(:,m1)*I_M(m1,:);
+    % partial wrt phi(m1)
+    % standard expression: +/- j * exp(+/- iPhi(m1)) at (m1,m1)
+    dRdPhi_m1 = 1i*(exp(1i*Phi(m1))*E_m1m1*G_psi_theta*diag(exp(-1i*Phi))...
+                  - diag(exp(1i*Phi))*G_psi_theta*E_m1m1*(exp(-1i*Phi(m1))));
+    grad.Phi{m1_ind} = dRdPhi_m1;  % store
+end
+
+%
+% -- Derivatives wrt Rho(1..M) = real part of C(1,k) --
+%
+for k = 1 : M
+    E_1k = symmetricToeplitzMask(M,k);  % picks out (1,k)
+    dRdRho_k=zeros(M,M);
+    for i=1:M
+        for j=1:M
+            if E_1k(i,j)==1
+                dRdRho_k(i,j)=Psi(i)*Psi(j)*exp(1j*(Phi(i)-Phi(j)));
+            end
+        end
+    end
+    grad.Rho{k} = dRdRho_k;  % store
+end
+
+%
+% -- Derivatives wrt Io(2..M) = imag part of C(1,k) --
+%
+for k_ind = 1 : (M-1)
+    k = k_ind + 1;  % actual index in [2..M]
+    E_1k = symmetricToeplitzMask(M,k);
+    % derivative wrt imaginary part => j*(E_1k - E_k1), but again
+    % you have direct expression for your model:
+    dRdIo_k=zeros(M,M);
+    for i=1:M
+        for j=1:M
+            if E_1k(i,j)==1
+                if i<j
+
+                    dRdIo_k(i,j)=1j*Psi(i)*Psi(j)*exp(1j*(Phi(i)-Phi(j)));
+                else
+                    dRdIo_k(i,j)=-1j*Psi(i)*Psi(j)*exp(1j*(Phi(i)-Phi(j)));
+                end
+            end
+        end
+    end
+    grad.Io{k_ind} = dRdIo_k;  % store
+end
+
+% grad.Sigma is already set to I_M
+
+%% 3) Now fill FIM using the same block-by-block style
+%    We'll use your original indexing convention.
+
+% Index ranges (assuming):
+%   Psi:   1..(M-1)
+%   Phi:   M..(2M-3)
+%   Rho:   (2M-2)..(3M-3)
+%   Io:    (3M-2)..(4M-4)
+%   Sigma: 4M-3
+idxPsi   = 1 : (M-1);
+idxPhi   = (M) : (2*M - 3);
+idxRho   = (2*M - 2) : (3*M - 3);
+idxIo    = (3*M - 2) : (4*M - 4);
+idxSigma = 4*M - 3;
+
+% Helper inline for the trace product
+tp = @(A,B) trace(inv_R * A * inv_R * B);
+
+%
+% ============== BLOCK (Psi,Psi) ==============
+%
+for m1_ind=1:(M-1)
+    dR1 = grad.Psi{m1_ind};
+    for m2_ind=1:m1_ind
+        dR2 = grad.Psi{m2_ind};
+        val = tp(dR1, dR2);
+        FIM(idxPsi(m1_ind), idxPsi(m2_ind)) = val;
+        FIM(idxPsi(m2_ind), idxPsi(m1_ind)) = val;
+    end
+end
+
+%
+% ============== BLOCK (Psi,Phi) ==============
+%
+FIM_Psi_Phi = zeros(M-1, M-2);
+for m1_ind=1:(M-1)
+    dRpsi = grad.Psi{m1_ind};
+    for m2_ind=1:(M-2)
+        dRphi = grad.Phi{m2_ind};
+        val = tp(dRpsi, dRphi);
+        FIM_Psi_Phi(m1_ind, m2_ind) = val;
+    end
+end
+FIM(idxPsi, idxPhi) = FIM_Psi_Phi;
+FIM(idxPhi, idxPsi) = FIM_Psi_Phi';
+
+%
+% ============== BLOCK (Phi,Phi) ==============
+%
+FIM_Phi_Phi = zeros(M-2, M-2);
+for m1_ind=1:(M-2)
+    dR1 = grad.Phi{m1_ind};
+    for m2_ind=1:m1_ind
+        dR2 = grad.Phi{m2_ind};
+        val = tp(dR1, dR2);
+        FIM_Phi_Phi(m1_ind,m2_ind) = val;
+        FIM_Phi_Phi(m2_ind,m1_ind) = val;
+    end
+end
+FIM(idxPhi, idxPhi) = FIM_Phi_Phi;
+
+%
+% ============== BLOCK (Rho,Rho) ==============
+%
+FIM_Rho_Rho = zeros(M, M);
+for m1_ind=1:M
+    dR1 = grad.Rho{m1_ind};
+    for m2_ind=1:m1_ind
+        dR2 = grad.Rho{m2_ind};
+        val = tp(dR1, dR2);
+        FIM_Rho_Rho(m1_ind,m2_ind) = val;
+        FIM_Rho_Rho(m2_ind,m1_ind) = val;
+    end
+end
+FIM(idxRho, idxRho) = FIM_Rho_Rho;
+
+%
+% ============== BLOCK (Io,Io) ==============
+%
+FIM_Io_Io = zeros(M-1, M-1);
+for m1_ind=1:(M-1)
+    dR1 = grad.Io{m1_ind};
+    for m2_ind=1:m1_ind
+        dR2 = grad.Io{m2_ind};
+        val = tp(dR1, dR2);
+        FIM_Io_Io(m1_ind,m2_ind) = val;
+        FIM_Io_Io(m2_ind,m1_ind) = val;
+    end
+end
+FIM(idxIo, idxIo) = FIM_Io_Io;
+
+%
+% ============== BLOCK (Psi,Rho) ==============
+%
+FIM_Psi_Rho = zeros(M-1, M);
+for m1_ind=1:(M-1)
+    dRpsi = grad.Psi{m1_ind};
+    for m2_ind=1:M
+        dRrho = grad.Rho{m2_ind};
+        val = tp(dRpsi, dRrho);
+        FIM_Psi_Rho(m1_ind,m2_ind) = val;
+    end
+end
+FIM(idxPsi, idxRho) = FIM_Psi_Rho;
+FIM(idxRho, idxPsi) = FIM_Psi_Rho';
+
+%
+% ============== BLOCK (Psi,Io) ==============
+%
+FIM_Psi_Io = zeros(M-1, M-1);
+for m1_ind=1:(M-1)
+    dRpsi = grad.Psi{m1_ind};
+    for m2_ind=1:(M-1)
+        dRio  = grad.Io{m2_ind};
+        val = tp(dRpsi, dRio);
+        FIM_Psi_Io(m1_ind,m2_ind) = val;
+    end
+end
+FIM(idxPsi, idxIo) = FIM_Psi_Io;
+FIM(idxIo, idxPsi) = FIM_Psi_Io';
+
+%
+% ============== BLOCK (Phi,Rho) ==============
+%
+FIM_Phi_Rho = zeros(M-2, M);
+for m1_ind=1:(M-2)
+    dRphi = grad.Phi{m1_ind};
+    for m2_ind=1:M
+        dRrho = grad.Rho{m2_ind};
+        val = tp(dRphi, dRrho);
+        FIM_Phi_Rho(m1_ind,m2_ind) = val;
+    end
+end
+FIM(idxPhi, idxRho) = FIM_Phi_Rho;
+FIM(idxRho, idxPhi) = FIM_Phi_Rho';
+
+%
+% ============== BLOCK (Phi,Io) ==============
+%
+FIM_Phi_Io = zeros(M-2, M-1);
+for m1_ind=1:(M-2)
+    dRphi = grad.Phi{m1_ind};
+    for m2_ind=1:(M-1)
+        dRio = grad.Io{m2_ind};
+        val = tp(dRphi, dRio);
+        FIM_Phi_Io(m1_ind,m2_ind) = val;
+    end
+end
+FIM(idxPhi, idxIo) = FIM_Phi_Io;
+FIM(idxIo, idxPhi) = FIM_Phi_Io';
+
+%
+% ============== BLOCK (Rho,Io) ==============
+%
+FIM_Rho_Io = zeros(M, M-1);
+for m1_ind=1:M
+    dRrho = grad.Rho{m1_ind};
+    for m2_ind=1:(M-1)
+        dRio = grad.Io{m2_ind};
+        val = tp(dRrho, dRio);
+        FIM_Rho_Io(m1_ind,m2_ind) = val;
+    end
+end
+FIM(idxRho, idxIo) = FIM_Rho_Io;
+FIM(idxIo, idxRho) = FIM_Rho_Io';
+
+%
+% ============== Blocks for sigma_n^2 ==============
+%
+% (Psi, sigma)
+FIM_Psi_Sigma = zeros(M-1,1);
+for m1_ind=1:(M-1)
+    dRpsi = grad.Psi{m1_ind};
+    val = tp(dRpsi, grad.Sigma);
+    FIM_Psi_Sigma(m1_ind) = val;
+end
+FIM(idxPsi, idxSigma) = FIM_Psi_Sigma;
+FIM(idxSigma, idxPsi) = FIM_Psi_Sigma';
+
+% (Phi, sigma)
+FIM_Phi_Sigma = zeros(M-2,1);
+for m1_ind=1:(M-2)
+    dRphi = grad.Phi{m1_ind};
+    val = tp(dRphi, grad.Sigma);
+    FIM_Phi_Sigma(m1_ind) = val;
+end
+FIM(idxPhi, idxSigma) = FIM_Phi_Sigma;
+FIM(idxSigma, idxPhi) = FIM_Phi_Sigma';
+
+% (Rho, sigma)
+FIM_Rho_Sigma = zeros(M,1);
+for m1_ind=1:M
+    dRrho = grad.Rho{m1_ind};
+    val = tp(dRrho, grad.Sigma);
+    FIM_Rho_Sigma(m1_ind) = val;
+end
+FIM(idxRho, idxSigma) = FIM_Rho_Sigma;
+FIM(idxSigma, idxRho) = FIM_Rho_Sigma';
+
+% (Io, sigma)
+FIM_Io_Sigma = zeros(M-1,1);
+for m1_ind=1:(M-1)
+    dRio = grad.Io{m1_ind};
+    val = tp(dRio, grad.Sigma);
+    FIM_Io_Sigma(m1_ind) = val;
+end
+FIM(idxIo, idxSigma) = FIM_Io_Sigma;
+FIM(idxSigma, idxIo) = FIM_Io_Sigma';
+
+% (sigma, sigma)
+FIM(idxSigma, idxSigma) = tp(grad.Sigma, grad.Sigma);
+
+end

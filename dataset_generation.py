@@ -195,6 +195,14 @@ def fischer_with_gradients_2(C, Phi, Psi, sigma_n_squared, T_snapshots=1):
             val = tp(dphi, dio)
             FIM[sl_phi.start+i, sl_iota.start+j] = val
             FIM[sl_iota.start+j, sl_phi.start+i] = val
+    # (ρ,ι) - CRITICAL: This block was missing!
+    for i in range(M):
+        drho = grad["Rho"][i]
+        for j in range(M-1):
+            dio = grad["Io"][j]
+            val = tp(drho, dio)
+            FIM[sl_rho.start+i, sl_iota.start+j] = val
+            FIM[sl_iota.start+j, sl_rho.start+i] = val
     # σ cross
     dS = grad["Sigma"]
     for i in range(M-1):

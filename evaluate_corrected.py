@@ -363,7 +363,7 @@ if __name__ == "__main__":
     print(f"[INFO] Loaded model from: {model_path}")
 
     # Evaluate
-    test_path = Path("Datasets/test_full_snr_bcrb.npz")
+    test_path = Path("Datasets/test_crb.npz")
     if not test_path.exists():
         print(f"[ERROR] Test dataset not found: {test_path}")
         print("[INFO]  Please run dataset_generation.py first")

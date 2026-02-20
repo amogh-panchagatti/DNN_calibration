@@ -31,8 +31,9 @@ def evaluate_model_vs_crb(model, npz_path, M, device="cpu", save_plots=True):
         X = torch.from_numpy(data["X"]).float().to(device)
         y = torch.from_numpy(data["y"]).float().to(device)
         snr = data["snr_db"]
-        crb_g = data["crb_gain"]    # Shape: (N, M-1)
-        crb_p = data["crb_phase"]   # Shape: (N, M-2)
+        # Support both CRB and BCRB field names
+        crb_g = data["bcrb_gain"] if "bcrb_gain" in data else data["crb_gain"]
+        crb_p = data["bcrb_phase"] if "bcrb_phase" in data else data["crb_phase"]
 
     print(f"[INFO] Dataset: {len(X)} samples")
     print(f"[INFO] Array size M = {M}")
@@ -239,11 +240,11 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     print(f"[INFO] Loaded model from: {model_path}")
 
-    # Evaluate
-    test_path = Path("Datasets/test_crb.npz")
+    # Evaluate - use BCRB test file
+    test_path = Path("Datasets/test_full_snr_bcrb.npz")
     if not test_path.exists():
         print(f"[ERROR] Test dataset not found: {test_path}")
-        print("[INFO]  Please run dataset_generation_crb.py first")
+        print("[INFO]  Please run dataset_generation.py first")
         sys.exit(1)
 
     results = evaluate_model_vs_crb(model, test_path, M, device=device)
